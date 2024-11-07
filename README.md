@@ -1,5 +1,5 @@
 # plasma2350-tinyfx-pir-christmas-tree-comet
-pimoroni plasma2350 led strip tiny fx pir sensor Christmas tree comet
+pimoroni plasma2350 led strip tiny fx pir sensor Christmas tree comet 🌠🎄🎅
 
 This micropython script for the pimoroni plasma 2350/2040, detects motion with the pimoroni tinyfx PIR sensor connected to the Qwic port then using connected led string, it fires a green comet from the bottom of the led strip, creating a christmas tree with twinkling lights, one the pir sensor detect no motions it wil then reverse the comet, leaving the tree lights off
 
