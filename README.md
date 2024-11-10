@@ -12,9 +12,9 @@ Requirements:-
 
 The Tinyfx pir sensor comes with a 3 pin connector to connect it to the TinyFX system but i spliced together with a 4pin Qwiic connector using just the positive, negative and yellow wire, leaving the blue one unused)
 
+![VideoCapture_20241110-102114](https://github.com/user-attachments/assets/7dcc7790-99bb-48b1-a0b5-bdad03b1f392)
+
 
 https://github.com/user-attachments/assets/221deb47-5b26-4eee-a803-7f78f45a3116
 
 
-
-![20241105_141219](https://github.com/user-attachments/assets/cf1e8c2e-e318-4350-b77a-15130c428cfe)
