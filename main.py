@@ -9,7 +9,9 @@ NUM_LEDS = 50
 ROCKET_SPEED = 0.05  # Speed of the rocket animation (higher value for slower speed)
 FADE_TRAIL_LENGTH = 15  # Length of the fading trail behind the rocket for a smooth effect
 TWINKLE_SPEED = 0.2  # Speed of the twinkle animation
-LED_ON_DURATION = 10  # Duration to keep the tree lit after motion
+LED_ON_DURATION = 20  # Duration (in seconds) to keep the tree lit after motion stops
+DEBOUNCE_TIME = 0.5  # Time in seconds to debounce the PIR sensor
+MOTION_CHECK_INTERVAL = 0.1  # Time between PIR sensor checks
 
 # Tree light constants (GRB color order)
 TREE_COLOUR = [0.0, 1.0, 0.6]  # Green tree color (HSV for GRB)
@@ -38,6 +40,19 @@ pir_pin = machine.Pin(21, machine.Pin.IN)
 # Track the state of motion and time
 motion_detected = False
 last_motion_time = 0
+tree_active = False  # Tracks if the tree is in its "launched" state
+idle_state = True  # Tracks if the tree is fully idle
+last_motion_check = time.time()  # Tracks the last time we checked the PIR sensor
+reversing_index = None  # Tracks the progress of rocket_reverse()
+
+# Function to debounce the PIR sensor
+def debounce_pir():
+    """Check for consistent motion detection over a debounce period."""
+    if pir_pin.value() == 1:
+        time.sleep(DEBOUNCE_TIME)  # Wait for the debounce time
+        if pir_pin.value() == 1:  # Check again to confirm motion
+            return True
+    return False
 
 # Function to animate sparkles randomly on the tree
 def animate_sparkles():
@@ -47,69 +62,84 @@ def animate_sparkles():
         else:
             led_strip.set_hsv(i, TREE_COLOUR[0], TREE_COLOUR[1], TREE_COLOUR[2])  # Tree color
 
-# Function to create a rocket-like growth effect with a persistent trail
-def rocket_launch():
-    for rocket_head in range(NUM_LEDS):
+# Function to grow the tree from a given starting position
+def grow_tree_from(start_position):
+    global tree_active, last_motion_time
+    tree_active = True
+    last_motion_time = time.time()  # Reset timeout timer
+    for rocket_head in range(start_position, NUM_LEDS):
         # Light up the LEDs from the bottom to the current rocket head
-        for i in range(rocket_head + 1):
+        for i in range(max(0, rocket_head + 1)):
             led_strip.set_hsv(i, TREE_COLOUR[0], TREE_COLOUR[1], TREE_COLOUR[2])
 
         # Draw the fading trail above the current rocket head
-        for i in range(rocket_head + 1, min(rocket_head + FADE_TRAIL_LENGTH, NUM_LEDS)):
+        for i in range(max(0, rocket_head + 1), min(rocket_head + FADE_TRAIL_LENGTH, NUM_LEDS)):
             distance = i - rocket_head
-            # Calculate brightness based on distance from the rocket head
             brightness = TREE_COLOUR[2] * (1 - distance / FADE_TRAIL_LENGTH)
             led_strip.set_hsv(i, TREE_COLOUR[0], TREE_COLOUR[1], brightness)
 
-        time.sleep(ROCKET_SPEED)  # Delay for rocket speed
+        time.sleep(ROCKET_SPEED)
 
 # Function to create a reverse rocket-like shrink effect with a fading trail
 def rocket_reverse():
-    for rocket_head in range(NUM_LEDS - 1, -1, -1):
-        # If motion is detected during the reverse animation, interrupt and start rocket_launch()
-        if pir_pin.value() == 1:
-            print("Motion detected! Reversing back to rocket launch.")
-            rocket_launch()  # Immediately reverse direction and go back up
+    global tree_active, reversing_index, idle_state
+    tree_active = False  # Tree is now reversing
+    for rocket_head in range(reversing_index if reversing_index is not None else NUM_LEDS - 1, -1, -1):
+        reversing_index = rocket_head  # Save progress in case motion is detected
+
+        # Check motion only during rocket_reverse
+        if debounce_pir():
+            print("Motion detected! Growing tree from current reverse position.")
+            grow_tree_from(reversing_index)  # Regrow the tree from the current position
+            reversing_index = None  # Clear the reversing state
             return
 
-        # Keep the LEDs lit from the bottom up to the current rocket head
+        # Turn off LEDs from the current rocket head
         for i in range(rocket_head + 1):
             led_strip.set_hsv(i, TREE_COLOUR[0], TREE_COLOUR[1], TREE_COLOUR[2])
 
         # Draw the fading trail below the current rocket head
         for i in range(rocket_head + 1, min(rocket_head + FADE_TRAIL_LENGTH, NUM_LEDS)):
             distance = i - rocket_head
-            # Calculate brightness based on distance from the rocket head
             brightness = TREE_COLOUR[2] * (1 - distance / FADE_TRAIL_LENGTH)
             led_strip.set_hsv(i, TREE_COLOUR[0], TREE_COLOUR[1], brightness)
 
-        time.sleep(ROCKET_SPEED)  # Delay for rocket speed
+        time.sleep(ROCKET_SPEED)
 
-    # Ensure all LEDs are off at the end
+    reversing_index = None  # Reset reversing index
+    idle_state = True  # Set tree to idle
     for i in range(NUM_LEDS):
-        led_strip.set_hsv(i, 0, 0, 0)
+        led_strip.set_hsv(i, 0, 0, 0)  # Ensure all LEDs are off
 
-# Main loop to handle motion detection and animation
+# Function to handle motion detection during idle or reverse
+def check_motion():
+    global motion_detected, last_motion_time, idle_state, reversing_index
+
+    # Detect motion only if idle or during rocket_reverse
+    if idle_state or not tree_active:
+        current_motion_state = debounce_pir()
+        if current_motion_state:
+            print("Motion detected! Launching or regrowing tree.")
+            motion_detected = True
+            idle_state = False  # Reset idle state
+            grow_tree_from(reversing_index if reversing_index is not None else 0)  # Grow tree from start or reverse position
+            reversing_index = None  # Clear reverse state
+
+# Main loop for animation and motion detection
 while True:
-    current_motion_state = pir_pin.value() == 1
+    # Handle motion detection at its own pace
+    if time.time() - last_motion_check >= MOTION_CHECK_INTERVAL:
+        last_motion_check = time.time()
+        check_motion()
 
-    if current_motion_state and not motion_detected:
-        print("Motion detected! Rocket launching the tree.")
-        motion_detected = True
-        last_motion_time = time.time()
-        rocket_launch()  # Start the rocket-like launch effect
-
-    elif current_motion_state:
-        last_motion_time = time.time()
-
-    elif not current_motion_state and motion_detected:
-        if time.time() - last_motion_time >= LED_ON_DURATION:
-            print("No recent motion. Rocket reversing the tree.")
-            motion_detected = False
-            rocket_reverse()  # Start the rocket-like reverse effect
-
-    # Continuously animate sparkles if the tree is lit
-    if motion_detected:
+    # Continuously animate sparkles if the tree is active
+    if tree_active:
         animate_sparkles()
+
+    # Trigger rocket_reverse() if timeout expires and no motion is detected
+    if tree_active and time.time() - last_motion_time >= LED_ON_DURATION:
+        print("Tree timeout expired. Starting rocket_reverse().")
+        rocket_reverse()
+
     time.sleep(TWINKLE_SPEED)
 
